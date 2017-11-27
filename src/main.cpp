@@ -173,6 +173,29 @@ bool is_in_lane(float d, int lane_index)
   return (d < (half_lane_width+lane_width*lane_index+half_lane_width) && d > (half_lane_width+lane_width*lane_index-half_lane_width));
 }
 
+bool is_obstacle_too_close_in_front(vector<vector<double>> sensor_fusion, int lane_index, double ego_vehicle_s, int prev_size)
+{
+  for(int i = 0; i < sensor_fusion.size(); i++)
+  {
+    float d = sensor_fusion[i][6];
+    if (is_in_lane(d, lane_index))
+    {
+      double vx = sensor_fusion[i][3];
+      double vy = sensor_fusion[i][4];
+      double check_speed = sqrt(vx*vx+vy*vy);
+      double check_car_s = sensor_fusion[i][5];
+
+      check_car_s += ((double)prev_size*.02*check_speed);
+
+      if ((check_car_s > ego_vehicle_s) && ((check_car_s-ego_vehicle_s) < 30))
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 int main() {
   uWS::Hub h;
 
@@ -250,7 +273,8 @@ int main() {
           	double end_path_d = j[1]["end_path_d"];
 
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
-          	auto sensor_fusion = j[1]["sensor_fusion"];
+
+          	vector<vector<double>> sensor_fusion = j[1]["sensor_fusion"];
 
 
           	int prev_size = previous_path_x.size();
@@ -261,35 +285,14 @@ int main() {
           	  car_s = end_path_s;
           	}
 
-          	bool too_close = false;
 
-          	for(int i = 0; i < sensor_fusion.size(); i++)
-          	{
-          	  float d = sensor_fusion[i][6];
-          	  if (is_in_lane(d, lane))
-          	  {
-          	    double vx = sensor_fusion[i][3];
-          	    double vy = sensor_fusion[i][4];
-          	    double check_speed = sqrt(vx*vx+vy*vy);
-          	    double check_car_s = sensor_fusion[i][5];
-
-          	    check_car_s += ((double)prev_size*.02*check_speed);
-
-          	    if ((check_car_s > car_s) && ((check_car_s-car_s) < 30))
-          	    {
-          	      //ref_vel = 29.5;
-          	      too_close = true;
-          	      if(lane > 0)
-          	      {
-          	        lane = 0;
-          	      }
-          	    }
-          	  }
-          	}
-
+          	bool too_close = is_obstacle_too_close_in_front(sensor_fusion, lane, car_s, prev_size);
           	if (too_close)
           	{
-          	  //cout << "too close" << endl;
+          	  if (lane > 0)
+          	  {
+          	    lane = 0;
+          	  }
           	  ref_vel -= .224;
           	}
           	else if (ref_vel < 49.5)
