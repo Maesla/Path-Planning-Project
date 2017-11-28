@@ -11,6 +11,7 @@
 #include "spline.h"
 
 #define LANE_WIDTH 4
+#define NEXT_WAYPOINT_TIME 0.02
 
 using namespace std;
 
@@ -166,11 +167,24 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 }
 
+
+double get_lane_d_center(int lane_index)
+{
+  float lane_width = LANE_WIDTH;
+  float half_lane_width = 0.5*lane_width;
+  return half_lane_width+lane_width*lane_index;
+}
+
 bool is_in_lane(float d, int lane_index)
 {
   float lane_width = LANE_WIDTH;
   float half_lane_width = 0.5*lane_width;
   return (d < (half_lane_width+lane_width*lane_index+half_lane_width) && d > (half_lane_width+lane_width*lane_index-half_lane_width));
+}
+
+bool is_in_front(double ego_vehicle_s, double check_s, double distance)
+{
+  return (check_s > ego_vehicle_s) && ((check_s-ego_vehicle_s) < distance);
 }
 
 bool is_obstacle_too_close_in_front(vector<vector<double>> sensor_fusion, int lane_index, double ego_vehicle_s, int prev_size)
@@ -185,9 +199,11 @@ bool is_obstacle_too_close_in_front(vector<vector<double>> sensor_fusion, int la
       double check_speed = sqrt(vx*vx+vy*vy);
       double check_car_s = sensor_fusion[i][5];
 
-      check_car_s += ((double)prev_size*.02*check_speed);
+      //cout << "Car s: " << check_car_s << " Speed: " << check_speed << " Prev_size: " << prev_size << endl;
+      check_car_s += ((double)prev_size*NEXT_WAYPOINT_TIME*check_speed);
+      //cout << "New s:" << check_car_s << endl;
 
-      if ((check_car_s > ego_vehicle_s) && ((check_car_s-ego_vehicle_s) < 30))
+      if (is_in_front(ego_vehicle_s, check_car_s, 30))
       {
         return true;
       }
@@ -195,6 +211,60 @@ bool is_obstacle_too_close_in_front(vector<vector<double>> sensor_fusion, int la
   }
   return false;
 }
+
+
+void calculate_auxiliar_path_connecting_with_previous(double car_s,double car_x, double car_y, double car_yaw, int prev_size,
+             vector<double> previous_path_x, vector <double> previous_path_y,
+             double &ref_x, double &ref_y, double &ref_yaw, vector<double> &ptsx, vector<double> &ptsy)
+{
+  ref_x = car_x;
+  ref_y = car_y;
+  ref_yaw = deg2rad(car_yaw);
+
+  if(prev_size < 2)
+  {
+    double prev_car_x = car_x - cos(car_yaw);
+    double prev_car_y = car_y - sin(car_yaw);
+
+    ptsx.push_back(prev_car_x);
+    ptsx.push_back(car_x);
+
+    ptsy.push_back(prev_car_y);
+    ptsy.push_back(car_y);
+  }
+  else
+  {
+    ref_x = previous_path_x[prev_size-1];
+    ref_y = previous_path_y[prev_size-1];
+
+    double ref_x_prev = previous_path_x[prev_size-2];
+    double ref_y_prev = previous_path_y[prev_size-2];
+    ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
+
+    ptsx.push_back(ref_x_prev);
+    ptsx.push_back(ref_x);
+
+    ptsy.push_back(ref_y_prev);
+    ptsy.push_back(ref_y);
+  }
+}
+
+void calculate_auxiliar_path_looking_ahead(double ego_vehicle_s, int lane_index,
+                                           vector<double> map_waypoints_s,vector<double> map_waypoints_x,vector<double> map_waypoints_y,
+                                           vector<double> &ptsx, vector<double> &ptsy)
+{
+  double d = get_lane_d_center(lane_index);
+
+  double look_ahead_distance = 30;
+
+  for (int i = 1; i <=3; i++)
+  {
+    vector<double> next_waypoint = getXY(ego_vehicle_s + i*look_ahead_distance, d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+    ptsx.push_back(next_waypoint[0]);
+    ptsy.push_back(next_waypoint[1]);
+
+  }
+ }
 
 int main() {
   uWS::Hub h;
@@ -266,8 +336,8 @@ int main() {
           	double car_speed = j[1]["speed"];
 
           	// Previous path data given to the Planner
-          	auto previous_path_x = j[1]["previous_path_x"];
-          	auto previous_path_y = j[1]["previous_path_y"];
+          	vector<double> previous_path_x = j[1]["previous_path_x"];
+          	vector <double> previous_path_y = j[1]["previous_path_y"];
           	// Previous path's end s and d values 
           	double end_path_s = j[1]["end_path_s"];
           	double end_path_d = j[1]["end_path_d"];
@@ -304,49 +374,19 @@ int main() {
           	vector<double> ptsx;
           	vector<double> ptsy;
 
-          	double ref_x = car_x;
-          	double ref_y = car_y;
-          	double ref_yaw = deg2rad(car_yaw);
-
-          	if(prev_size < 2)
-          	{
-          	  double prev_car_x = car_x - cos(car_yaw);
-          	  double prev_car_y = car_y - sin(car_yaw);
-
-          	  ptsx.push_back(prev_car_x);
-          	  ptsx.push_back(car_x);
-
-          	  ptsy.push_back(prev_car_y);
-          	  ptsy.push_back(car_y);
-          	}
-          	else
-          	{
-          	  ref_x = previous_path_x[prev_size-1];
-          	  ref_y = previous_path_y[prev_size-1];
-
-              double ref_x_prev = previous_path_x[prev_size-2];
-              double ref_y_prev = previous_path_y[prev_size-2];
-              ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
-
-              ptsx.push_back(ref_x_prev);
-              ptsx.push_back(ref_x);
-
-              ptsy.push_back(ref_y_prev);
-              ptsy.push_back(ref_y);
-          	}
+          	double ref_x;
+          	double ref_y;
+          	double ref_yaw;
+          	calculate_auxiliar_path_connecting_with_previous(car_s,car_x, car_y, car_yaw, prev_size,
+          	             previous_path_x, previous_path_y,
+          	             ref_x, ref_y, ref_yaw, ptsx, ptsy);
 
 
-          	vector<double> next_wp0 = getXY(car_s + 30, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp1 = getXY(car_s + 60, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
-            vector<double> next_wp2 = getXY(car_s + 90, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
-            ptsx.push_back(next_wp0[0]);
-            ptsx.push_back(next_wp1[0]);
-            ptsx.push_back(next_wp2[0]);
+          	calculate_auxiliar_path_looking_ahead(car_s, lane,
+          	                                           map_waypoints_s, map_waypoints_x, map_waypoints_y,
+          	                                           ptsx, ptsy);
 
-            ptsy.push_back(next_wp0[1]);
-            ptsy.push_back(next_wp1[1]);
-            ptsy.push_back(next_wp2[1]);
 
             for(int i = 0; i < ptsx.size(); i++)
             {
