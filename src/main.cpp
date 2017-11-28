@@ -313,6 +313,69 @@ void calculate_path(double ref_x, double ref_y, double ref_yaw, double ref_vel, 
   }
 }
 
+void calculate_path(int lane_index, double ref_vel, json j,
+                    vector<double> map_waypoints_s,vector<double> map_waypoints_x,vector<double> map_waypoints_y,
+                    vector<double> &waypoints_x, vector<double> &waypoints_y)
+{
+
+  double car_x = j[1]["x"];
+  double car_y = j[1]["y"];
+  double car_s = j[1]["s"];
+  double car_d = j[1]["d"];
+  double car_yaw = j[1]["yaw"];
+  double car_speed = j[1]["speed"];
+
+  // Previous path data given to the Planner
+  vector<double> previous_path_x = j[1]["previous_path_x"];
+  vector <double> previous_path_y = j[1]["previous_path_y"];
+  // Previous path's end s and d values
+  double end_path_s = j[1]["end_path_s"];
+  double end_path_d = j[1]["end_path_d"];
+
+  int prev_size = previous_path_x.size();
+
+  vector<double> ptsx;
+  vector<double> ptsy;
+
+  double ref_x;
+  double ref_y;
+  double ref_yaw;
+
+  calculate_auxiliar_path_connecting_with_previous(car_s,car_x, car_y, car_yaw, prev_size,
+               previous_path_x, previous_path_y,
+               ref_x, ref_y, ref_yaw, ptsx, ptsy);
+
+
+
+  calculate_auxiliar_path_looking_ahead(car_s, lane_index,
+                                             map_waypoints_s, map_waypoints_x, map_waypoints_y,
+                                             ptsx, ptsy);
+
+
+  for(int i = 0; i < ptsx.size(); i++)
+  {
+    double x = ptsx[i];
+    double y = ptsy[i];
+    transform_to_local(ref_x, ref_y, ref_yaw, x, y);
+    ptsx[i] = x;
+    ptsy[i] = y;
+
+  }
+
+
+  tk::spline s;
+  s.set_points(ptsx, ptsy);
+
+
+  for(int i = 0; i < previous_path_x.size(); i++)
+  {
+    waypoints_x.push_back(previous_path_x[i]);
+    waypoints_y.push_back(previous_path_y[i]);
+  }
+
+  calculate_path(ref_x, ref_y, ref_yaw, ref_vel, prev_size,s,waypoints_x, waypoints_y);
+}
+
 int main() {
   uWS::Hub h;
 
@@ -418,51 +481,13 @@ int main() {
           	}
 
 
-          	vector<double> ptsx;
-          	vector<double> ptsy;
+            vector<double> next_x_vals;
+            vector<double> next_y_vals;
+          	calculate_path(lane, ref_vel, j,
+          	                    map_waypoints_s,map_waypoints_x,map_waypoints_y,
+          	                    next_x_vals, next_y_vals);
 
-          	double ref_x;
-          	double ref_y;
-          	double ref_yaw;
-
-          	calculate_auxiliar_path_connecting_with_previous(car_s,car_x, car_y, car_yaw, prev_size,
-          	             previous_path_x, previous_path_y,
-          	             ref_x, ref_y, ref_yaw, ptsx, ptsy);
-
-
-
-          	calculate_auxiliar_path_looking_ahead(car_s, lane,
-          	                                           map_waypoints_s, map_waypoints_x, map_waypoints_y,
-          	                                           ptsx, ptsy);
-
-
-          	for(int i = 0; i < ptsx.size(); i++)
-          	{
-          	  double x = ptsx[i];
-          	  double y = ptsy[i];
-          	  transform_to_local(ref_x, ref_y, ref_yaw, x, y);
-          	  ptsx[i] = x;
-          	  ptsy[i] = y;
-
-          	}
-
-
-            tk::spline s;
-            s.set_points(ptsx, ptsy);
-
-
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
-
-          	for(int i = 0; i < previous_path_x.size(); i++)
-          	{
-          	  next_x_vals.push_back(previous_path_x[i]);
-              next_y_vals.push_back(previous_path_y[i]);
-          	}
-
-          	calculate_path(ref_x, ref_y, ref_yaw, ref_vel, prev_size,s,next_x_vals, next_y_vals);
-
-            json msgJson;
+          	json msgJson;
 
 
           	msgJson["next_x"] = next_x_vals;
