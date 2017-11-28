@@ -395,6 +395,22 @@ float speed_cost(double speed,double speed_limit, double buffer_v, double stop_c
 
 }
 
+float lane_obstacle_cost(vector<vector<double>> sensor_fusion, int lane_index, double ego_vehicle_s, int prev_size)
+{
+  if (is_obstacle_too_close_in_front(sensor_fusion, lane_index, ego_vehicle_s, prev_size))
+      return 1;
+
+  return 0;
+}
+
+float lane_change_cost(int new_lane, int current_lane)
+{
+  if (new_lane == current_lane)
+    return 0;
+
+  return 1;
+}
+
 int main() {
   uWS::Hub h;
 
@@ -509,7 +525,9 @@ int main() {
             {
               for (int acceleration_change = -1; acceleration_change <= 1; acceleration_change++)
               {
-                int new_lane = lane;// + lane_change;
+                //int new_lane = lane;// + lane_change;
+                int new_lane = lane + lane_change;
+
                 double new_ref_vel = ref_vel + acceleration_change*ACCELERATION;
 
                 if (new_ref_vel > 0.01 && new_lane >= 0)
@@ -520,7 +538,10 @@ int main() {
                                  map_waypoints_s,map_waypoints_x,map_waypoints_y,
                                  aux_x, aux_y);
 
-                  double cost = speed_cost(new_ref_vel,MAX_SPEED, 10, 0.7);
+                  double speed_cost_value = speed_cost(new_ref_vel,MAX_SPEED, 10, 0.7);
+                  double lane_cost = lane_obstacle_cost(sensor_fusion, new_lane, car_s, prev_size);
+                  double change_lane_cost_value = lane_change_cost(new_lane, lane);
+                  double cost = speed_cost_value + 5*lane_cost + change_lane_cost_value;
 
                   if (cost < min_cost)
                   {
