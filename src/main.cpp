@@ -14,6 +14,8 @@
 #define NEXT_WAYPOINT_TIME 0.02
 #define WAYPOINT_COUNT 50
 #define METER_PER_SECOND2MILLES_PER_HOUR 2.23694
+#define ACCELERATION 0.224
+#define MAX_SPEED 49.5
 
 using namespace std;
 
@@ -376,6 +378,23 @@ void calculate_path(int lane_index, double ref_vel, json j,
   calculate_path(ref_x, ref_y, ref_yaw, ref_vel, prev_size,s,waypoints_x, waypoints_y);
 }
 
+float speed_cost(double speed,double speed_limit, double buffer_v, double stop_cost)
+{
+  if (speed > speed_limit)
+    return 1;
+
+  double target_speed = speed_limit - buffer_v;
+  if (speed < target_speed)
+  {
+    return stop_cost*((target_speed - speed)/target_speed);
+  }
+  else
+  {
+    return (speed-target_speed)/buffer_v;
+  }
+
+}
+
 int main() {
   uWS::Hub h;
 
@@ -415,7 +434,7 @@ int main() {
 
   int lane = 1;
   //double ref_vel = 49.5;//mph
-  double ref_vel = 0;//mph
+  double ref_vel = 0.1;//mph
 
 
   h.onMessage([&ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -466,26 +485,68 @@ int main() {
           	}
 
 
-          	bool too_close = is_obstacle_too_close_in_front(sensor_fusion, lane, car_s, prev_size);
+          	/*bool too_close = is_obstacle_too_close_in_front(sensor_fusion, lane, car_s, prev_size);
           	if (too_close)
           	{
           	  if (lane > 0)
           	  {
           	    lane = 0;
           	  }
-          	  ref_vel -= .224;
+          	  ref_vel -= ACCELERATION;
           	}
-          	else if (ref_vel < 49.5)
+          	else if (ref_vel < MAX_SPEED)
           	{
-          	  ref_vel += .224;
-          	}
+          	  ref_vel += ACCELERATION;
+          	}*/
+
+          	double min_cost = 99999999;
+            vector<double> next_x_vals;
+            vector<double> next_y_vals;
+            int selected_lane;
+            double selected_speed;
+
+            for (int lane_change = -1; lane_change <= 1; lane_change++)
+            {
+              for (int acceleration_change = -1; acceleration_change <= 1; acceleration_change++)
+              {
+                int new_lane = lane;// + lane_change;
+                double new_ref_vel = ref_vel + acceleration_change*ACCELERATION;
+
+                if (new_ref_vel > 0.01 && new_lane >= 0)
+                {
+                  vector<double> aux_x;
+                  vector<double> aux_y;
+                  calculate_path(new_lane, new_ref_vel, j,
+                                 map_waypoints_s,map_waypoints_x,map_waypoints_y,
+                                 aux_x, aux_y);
+
+                  double cost = speed_cost(new_ref_vel,MAX_SPEED, 10, 0.7);
+
+                  if (cost < min_cost)
+                  {
+                    min_cost = cost;
+                    next_x_vals = aux_x;
+                    next_y_vals = aux_y;
+                    selected_lane = new_lane;
+                    selected_speed = new_ref_vel;
+
+                  }
+                }
+              }
+            }
+
+            lane = selected_lane;
+            ref_vel = selected_speed;
+            cout << "Lane: " << lane << " Ref vel: " << ref_vel << endl;
 
 
+            /*
             vector<double> next_x_vals;
             vector<double> next_y_vals;
           	calculate_path(lane, ref_vel, j,
           	                    map_waypoints_s,map_waypoints_x,map_waypoints_y,
           	                    next_x_vals, next_y_vals);
+          	                    */
 
           	json msgJson;
 
