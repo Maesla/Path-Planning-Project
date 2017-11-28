@@ -12,6 +12,8 @@
 
 #define LANE_WIDTH 4
 #define NEXT_WAYPOINT_TIME 0.02
+#define WAYPOINT_COUNT 50
+#define METER_PER_SECOND2MILLES_PER_HOUR 2.23694
 
 using namespace std;
 
@@ -266,6 +268,51 @@ void calculate_auxiliar_path_looking_ahead(double ego_vehicle_s, int lane_index,
   }
  }
 
+void transform_to_local(double ref_x, double ref_y, double ref_yaw, double &x, double &y)
+{
+  double shift_x = x - ref_x;
+  double shift_y = y - ref_y;
+
+  x = (shift_x*cos(0-ref_yaw) - shift_y*sin(0-ref_yaw));
+  y = (shift_x*sin(0-ref_yaw) + shift_y*cos(0-ref_yaw));
+}
+
+void transform_to_world(double ref_x, double ref_y, double ref_yaw, double &x, double &y)
+{
+  double x_ref = x;
+  double y_ref = y;
+
+  x = (x_ref*cos(ref_yaw)-y_ref*sin(ref_yaw));
+  y = (x_ref*sin(ref_yaw)+y_ref*cos(ref_yaw));
+
+  x += ref_x;
+  y += ref_y;
+}
+
+void calculate_path(double ref_x, double ref_y, double ref_yaw, double ref_vel, int prev_size, tk::spline s,
+            vector<double> &next_x_vals, vector<double> &next_y_vals)
+{
+  double target_x = 30;
+  double target_y = s(target_x);
+  double target_dist = sqrt(target_x*target_x+target_y*target_y);
+
+  double x_add_on = 0;
+
+  for (int i = 1; i <= WAYPOINT_COUNT - prev_size; i++)
+  {
+    double N = (target_dist/(NEXT_WAYPOINT_TIME*ref_vel/METER_PER_SECOND2MILLES_PER_HOUR));
+    double x_point = x_add_on+(target_x)/N;
+    double y_point = s(x_point);
+
+    x_add_on = x_point;
+
+    transform_to_world(ref_x, ref_y, ref_yaw, x_point, y_point);
+
+    next_x_vals.push_back(x_point);
+    next_y_vals.push_back(y_point);
+  }
+}
+
 int main() {
   uWS::Hub h;
 
@@ -377,6 +424,7 @@ int main() {
           	double ref_x;
           	double ref_y;
           	double ref_yaw;
+
           	calculate_auxiliar_path_connecting_with_previous(car_s,car_x, car_y, car_yaw, prev_size,
           	             previous_path_x, previous_path_y,
           	             ref_x, ref_y, ref_yaw, ptsx, ptsy);
@@ -388,15 +436,16 @@ int main() {
           	                                           ptsx, ptsy);
 
 
-            for(int i = 0; i < ptsx.size(); i++)
-            {
-              double shift_x = ptsx[i] - ref_x;
-              double shift_y = ptsy[i] - ref_y;
+          	for(int i = 0; i < ptsx.size(); i++)
+          	{
+          	  double x = ptsx[i];
+          	  double y = ptsy[i];
+          	  transform_to_local(ref_x, ref_y, ref_yaw, x, y);
+          	  ptsx[i] = x;
+          	  ptsy[i] = y;
 
-              ptsx[i] = (shift_x*cos(0-ref_yaw) - shift_y*sin(0-ref_yaw));
-              ptsy[i] = (shift_x*sin(0-ref_yaw) + shift_y*cos(0-ref_yaw));
+          	}
 
-            }
 
             tk::spline s;
             s.set_points(ptsx, ptsy);
@@ -411,33 +460,7 @@ int main() {
               next_y_vals.push_back(previous_path_y[i]);
           	}
 
-          	double target_x = 30;
-          	double target_y = s(target_x);
-          	double target_dist = sqrt(target_x*target_x+target_y*target_y);
-
-          	double x_add_on = 0;
-
-          	for (int i = 1; i <= 50 - previous_path_x.size(); i++)
-          	{
-          	  double N = (target_dist/(0.02*ref_vel/2.24));
-          	  double x_point = x_add_on+(target_x)/N;
-          	  double y_point = s(x_point);
-
-          	  x_add_on = x_point;
-
-          	  double x_ref = x_point;
-          	  double y_ref = y_point;
-
-          	  x_point = (x_ref*cos(ref_yaw)-y_ref*sin(ref_yaw));
-          	  y_point = (x_ref*sin(ref_yaw)+y_ref*cos(ref_yaw));
-
-          	  x_point += ref_x;
-          	  y_point += ref_y;
-
-              next_x_vals.push_back(x_point);
-              next_y_vals.push_back(y_point);
-          	}
-
+          	calculate_path(ref_x, ref_y, ref_yaw, ref_vel, prev_size,s,next_x_vals, next_y_vals);
 
             json msgJson;
 
