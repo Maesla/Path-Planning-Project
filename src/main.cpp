@@ -259,7 +259,7 @@ void calculate_auxiliar_path_looking_ahead(double ego_vehicle_s, int lane_index,
 {
   double d = get_lane_d_center(lane_index);
 
-  double look_ahead_distance = 30;
+  double look_ahead_distance = 50;
 
   for (int i = 1; i <=3; i++)
   {
@@ -411,6 +411,71 @@ float lane_change_cost(int new_lane, int current_lane)
   return 1;
 }
 
+float lane_obstacle_cost2(vector<vector<double>> sensor_fusion, int lane_index, double ego_vehicle_s, int prev_size)
+{
+  for(int i = 0; i < sensor_fusion.size(); i++)
+  {
+    float d = sensor_fusion[i][6];
+    if (is_in_lane(d, lane_index))
+    {
+      double vx = sensor_fusion[i][3];
+      double vy = sensor_fusion[i][4];
+      double check_speed = sqrt(vx*vx+vy*vy);
+      double check_car_s = sensor_fusion[i][5];
+
+      check_car_s += ((double)prev_size*NEXT_WAYPOINT_TIME*check_speed);
+
+      double diff = fabs(check_car_s - ego_vehicle_s);
+
+      if (diff < 30)
+      {
+        cout << "Watch out " << endl;
+        return 1 - diff/30;
+      }
+    }
+  }
+
+  return 0;
+}
+
+float experimental_cost(vector<vector<double>> sensor_fusion, vector<double> waypoints_x, vector <double> waypoints_y)
+{
+  for(int i = 0; i < waypoints_x.size(); i++)
+  {
+    for(int j = 0; j < sensor_fusion.size(); j++)
+    {
+      double x_traffic = sensor_fusion[j][1];
+      double y_traffic = sensor_fusion[j][2];
+
+      double x = waypoints_x[i];
+      double y = waypoints_y[i];
+
+      double dist = distance(x,y,x_traffic, y_traffic);
+
+      if (dist < 0.5)
+        return 1;
+    }
+  }
+
+  return 0;
+}
+
+void print_sensor_fusion(vector<vector<double>> sensor_fusion)
+{
+  cout << "**************************" << endl;
+  for(int i = 0; i < sensor_fusion.size(); i++)
+  {
+    double id = sensor_fusion[i][0];
+    double x = sensor_fusion[i][1];
+    double y = sensor_fusion[i][2];
+    double vx = sensor_fusion[i][3];
+    double vy = sensor_fusion[i][4];
+    double s = sensor_fusion[i][5];
+    double d = sensor_fusion[i][6];
+    cout << "Id: " << id << " x: " << x << " y: " << y << " vx: " << vx << " vy: " << vy << " s: " << s << " d: " << d << endl;
+  }
+}
+
 int main() {
   uWS::Hub h;
 
@@ -500,6 +565,8 @@ int main() {
           	  car_s = end_path_s;
           	}
 
+          	print_sensor_fusion(sensor_fusion);
+
 
           	/*bool too_close = is_obstacle_too_close_in_front(sensor_fusion, lane, car_s, prev_size);
           	if (too_close)
@@ -530,7 +597,7 @@ int main() {
 
                 double new_ref_vel = ref_vel + acceleration_change*ACCELERATION;
 
-                if (new_ref_vel > 0.01 && new_lane >= 0)
+                if (new_ref_vel > 0.01 && new_lane >= 0 && new_lane <=2)
                 {
                   vector<double> aux_x;
                   vector<double> aux_y;
@@ -538,10 +605,13 @@ int main() {
                                  map_waypoints_s,map_waypoints_x,map_waypoints_y,
                                  aux_x, aux_y);
 
-                  double speed_cost_value = speed_cost(new_ref_vel,MAX_SPEED, 10, 0.7);
-                  double lane_cost = lane_obstacle_cost(sensor_fusion, new_lane, car_s, prev_size);
+                  double speed_cost_value = speed_cost(new_ref_vel,MAX_SPEED, 5, 0.7);
+                  double lane_cost = lane_obstacle_cost2(sensor_fusion, new_lane, car_s, prev_size);
                   double change_lane_cost_value = lane_change_cost(new_lane, lane);
-                  double cost = speed_cost_value + 5*lane_cost + change_lane_cost_value;
+                  double exp_cost = experimental_cost(sensor_fusion, aux_x, aux_y);
+
+                  //double cost = speed_cost_value + 10*lane_cost;// + change_lane_cost_value;
+                  double cost = 10*exp_cost + speed_cost_value;
 
                   if (cost < min_cost)
                   {
@@ -551,6 +621,17 @@ int main() {
                     selected_lane = new_lane;
                     selected_speed = new_ref_vel;
 
+                    /*if (change_lane_cost_value > 0)
+                    {
+                      selected_speed = ref_vel - 2*ACCELERATION;
+                      cout << "HOLA" << endl;
+                    }
+                    else
+                    {
+                      selected_speed = new_ref_vel;
+
+                    }*/
+
                   }
                 }
               }
@@ -558,7 +639,7 @@ int main() {
 
             lane = selected_lane;
             ref_vel = selected_speed;
-            cout << "Lane: " << lane << " Ref vel: " << ref_vel << endl;
+            //cout << "Lane: " << lane << " Ref vel: " << ref_vel << endl;
 
 
             /*
