@@ -82,7 +82,7 @@ int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
 	double angle = fabs(theta-heading);
   angle = min(2*pi() - angle, angle);
 
-  if(angle > pi()/4)
+  if(angle > pi()/2)
   {
     closestWaypoint++;
   if (closestWaypoint == maps_x.size())
@@ -171,7 +171,6 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 }
 
-
 double get_lane_d_center(int lane_index)
 {
   float lane_width = LANE_WIDTH;
@@ -185,6 +184,20 @@ bool is_in_lane(float d, int lane_index)
   float half_lane_width = 0.5*lane_width;
   return (d < (half_lane_width+lane_width*lane_index+half_lane_width) && d > (half_lane_width+lane_width*lane_index-half_lane_width));
 }
+
+int get_lane_index(double d)
+{
+  return ((int)d/LANE_WIDTH);
+  //return (int)(((d - LANE_WIDTH*0.5) / LANE_WIDTH) + LANE_WIDTH*0.5);
+  /*for(int i = -3; i < 3; i++)
+  {
+    if (is_in_lane(d, i))
+      return i;
+  }
+
+  return -10;*/
+}
+
 
 bool is_in_front(double ego_vehicle_s, double check_s, double distance)
 {
@@ -411,56 +424,33 @@ float lane_change_cost(int new_lane, int current_lane)
   return 1;
 }
 
-float lane_obstacle_cost2(vector<vector<double>> sensor_fusion, int lane_index, double ego_vehicle_s, int prev_size)
+double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, double lane_index, double max_distance)
 {
+  double next_s = ego_s + speed*dt;
   for(int i = 0; i < sensor_fusion.size(); i++)
   {
-    float d = sensor_fusion[i][6];
-    if (is_in_lane(d, lane_index))
+    int traffic_lane = sensor_fusion[i][9];
+    double predicted_s = sensor_fusion[i][7];
+
+    if (traffic_lane == lane_index)
     {
-      double vx = sensor_fusion[i][3];
-      double vy = sensor_fusion[i][4];
-      double check_speed = sqrt(vx*vx+vy*vy);
-      double check_car_s = sensor_fusion[i][5];
+      double distance = predicted_s - next_s;
 
-      check_car_s += ((double)prev_size*NEXT_WAYPOINT_TIME*check_speed);
-
-      double diff = fabs(check_car_s - ego_vehicle_s);
-
-      if (diff < 30)
+      if (distance >  0 && distance < max_distance)
       {
-        cout << "Watch out " << endl;
-        return 1 - diff/30;
+        double cost = 1 - distance/max_distance;
+        cout << "!!!!!!: " << cost << " speed: " << speed << endl;
+        return cost;
       }
+
     }
   }
-
   return 0;
 }
 
-float experimental_cost(vector<vector<double>> sensor_fusion, vector<double> waypoints_x, vector <double> waypoints_y)
-{
-  for(int i = 0; i < waypoints_x.size(); i++)
-  {
-    for(int j = 0; j < sensor_fusion.size(); j++)
-    {
-      double x_traffic = sensor_fusion[j][1];
-      double y_traffic = sensor_fusion[j][2];
 
-      double x = waypoints_x[i];
-      double y = waypoints_y[i];
 
-      double dist = distance(x,y,x_traffic, y_traffic);
-
-      if (dist < 0.5)
-        return 1;
-    }
-  }
-
-  return 0;
-}
-
-void print_sensor_fusion(vector<vector<double>> sensor_fusion)
+void print_sensor_fusion(vector<vector<double>> &sensor_fusion, double ego_s, double ego_d, int prev_size, vector<double> map_waypoints_x, vector<double> map_waypoints_y)
 {
   cout << "**************************" << endl;
   for(int i = 0; i < sensor_fusion.size(); i++)
@@ -472,7 +462,47 @@ void print_sensor_fusion(vector<vector<double>> sensor_fusion)
     double vy = sensor_fusion[i][4];
     double s = sensor_fusion[i][5];
     double d = sensor_fusion[i][6];
-    cout << "Id: " << id << " x: " << x << " y: " << y << " vx: " << vx << " vy: " << vy << " s: " << s << " d: " << d << endl;
+
+
+    double dt = (double)prev_size*NEXT_WAYPOINT_TIME;
+    double next_x = x+vx*dt;
+    double next_y = y+vy*dt;
+    double speed = sqrt(vx*vx+vy*vy);
+
+    int myWaypoint = ClosestWaypoint(x,y,map_waypoints_x, map_waypoints_y);
+    int nextWaypoint = ClosestWaypoint(next_x,next_y,map_waypoints_x, map_waypoints_y);
+    double lane_dx = map_waypoints_x[nextWaypoint] - map_waypoints_x[myWaypoint];
+    double lane_dy = map_waypoints_y[nextWaypoint] - map_waypoints_y[myWaypoint];
+
+
+    double yaw = atan2(vy,vx) - atan2(lane_dy, lane_dx);
+    double v_s = speed*cos(yaw);
+    double v_d = speed*cos(yaw);
+
+    double predicted_s = s + v_s*dt;
+    double predicted_d = d + v_d*dt;
+    //vector<double> next_s_d = getFrenet(next_x, next_y, yaw, map_waypoints_x, map_waypoints_y);
+
+    int lane_index = get_lane_index(d);
+    int predicted_lane_index(predicted_d);
+
+    sensor_fusion[i].push_back(predicted_s);
+    sensor_fusion[i].push_back(predicted_d);
+    sensor_fusion[i].push_back(lane_index);
+    sensor_fusion[i].push_back(predicted_lane_index);
+
+
+
+    double diff_s = predicted_s - ego_s;
+    double diff_d = ego_d - d;
+
+
+    if(lane_index == 1)
+    {
+      cout << "Id: " << id << " x: " << x << " y: " << y << " vx: " << vx << " vy: " << vy
+          << " s: " << s << " d: " << d << " lane: " << lane_index
+          << " diff s: " << diff_s << " diff d: " << diff_d << endl;
+    }
   }
 }
 
@@ -565,7 +595,7 @@ int main() {
           	  car_s = end_path_s;
           	}
 
-          	print_sensor_fusion(sensor_fusion);
+          	print_sensor_fusion(sensor_fusion, car_s, car_d, prev_size, map_waypoints_x, map_waypoints_y);
 
 
           	/*bool too_close = is_obstacle_too_close_in_front(sensor_fusion, lane, car_s, prev_size);
@@ -582,12 +612,49 @@ int main() {
           	  ref_vel += ACCELERATION;
           	}*/
 
-          	double min_cost = 99999999;
+          	double min_cost = 99999.0;
             vector<double> next_x_vals;
             vector<double> next_y_vals;
             int selected_lane;
             double selected_speed;
+            double dt = (double)prev_size*NEXT_WAYPOINT_TIME;
+            dt = NEXT_WAYPOINT_TIME;
+            for (int acceleration_change = -2; acceleration_change <= 2; acceleration_change++)
+            {
 
+               double new_ref_vel = ref_vel + acceleration_change*ACCELERATION;
+
+               if (new_ref_vel > 0.01 && lane >= 0 && lane <=2)
+               {
+
+                 double speed_cost_value = speed_cost(new_ref_vel,MAX_SPEED, 5, 0.7);
+                 double distance_cost_value =  distance_cost(sensor_fusion, car_s, new_ref_vel, dt, lane, 30);
+
+                 //double distance_cost_value = distance_cost(car_s, new_ref_vel, )
+
+                 double cost = speed_cost_value + 100.0*distance_cost_value;
+                 cout << "Cost: " << cost << endl;
+
+                 if (cost < min_cost)
+                 {
+                   min_cost = cost;
+                   //next_x_vals = aux_x;
+                   //next_y_vals = aux_y;
+                   selected_lane = lane;
+                   selected_speed = new_ref_vel;
+                 }
+               }
+              }
+
+            lane = selected_lane;
+            ref_vel = selected_speed;
+            cout << "Selected speed: " << ref_vel <<  endl;
+            calculate_path(lane, ref_vel, j,
+                                           map_waypoints_s,map_waypoints_x,map_waypoints_y,
+                                           next_x_vals, next_y_vals);
+
+
+/*
             for (int lane_change = -1; lane_change <= 1; lane_change++)
             {
               for (int acceleration_change = -1; acceleration_change <= 1; acceleration_change++)
@@ -621,7 +688,7 @@ int main() {
                     selected_lane = new_lane;
                     selected_speed = new_ref_vel;
 
-                    /*if (change_lane_cost_value > 0)
+                    if (change_lane_cost_value > 0)
                     {
                       selected_speed = ref_vel - 2*ACCELERATION;
                       cout << "HOLA" << endl;
@@ -630,15 +697,15 @@ int main() {
                     {
                       selected_speed = new_ref_vel;
 
-                    }*/
+                    }
 
                   }
                 }
               }
             }
+*/
 
-            lane = selected_lane;
-            ref_vel = selected_speed;
+
             //cout << "Lane: " << lane << " Ref vel: " << ref_vel << endl;
 
 
