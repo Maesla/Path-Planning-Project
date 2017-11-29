@@ -424,7 +424,48 @@ float lane_change_cost(int new_lane, int current_lane)
   return 1;
 }
 
-double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, double lane_index, double max_distance)
+double neighbor_detector(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int current_lane, double threshold)
+{
+  double next_s = ego_s + speed*dt;
+  for(int i = 0; i < sensor_fusion.size(); i++)
+  {
+    double predicted_s = sensor_fusion[i][7];
+    int traffic_lane = sensor_fusion[i][9];
+    bool is_neighbor = current_lane != traffic_lane;
+    double distance = predicted_s - next_s;
+
+    if(is_neighbor && (fabs(distance) < threshold))
+    {
+      cout << "Neightbour in lane: " << traffic_lane << " at distance: " << distance << endl;
+    }
+  }
+
+  return 0.0;
+}
+
+double change_lane_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int current_lane, int next_lane,  double threshold)
+{
+  double next_s = ego_s + speed*dt;
+  bool is_lane_change = current_lane != next_lane;
+
+  for(int i = 0; i < sensor_fusion.size(); i++)
+  {
+    double predicted_s = sensor_fusion[i][7];
+    int traffic_lane = sensor_fusion[i][9];
+    bool is_neighbor = next_lane == traffic_lane;
+    double distance = predicted_s - next_s;
+
+    if(is_neighbor && (fabs(distance) < threshold))
+    {
+      cout << "Neightbour in lane: " << traffic_lane << " at distance: " << distance << endl;
+      return 1.0;
+    }
+  }
+
+  return 0.0;
+}
+
+double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int lane_index, int current_lane, double max_distance)
 {
   double next_s = ego_s + speed*dt;
   for(int i = 0; i < sensor_fusion.size(); i++)
@@ -439,12 +480,15 @@ double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double 
       if (distance >  0 && distance < max_distance)
       {
         double cost = 1 - distance/max_distance;
-        cout << "!!!!!!: " << cost << " speed: " << speed << endl;
+        //cout << "!!!!!!: " << cost << " speed: " << speed << endl;
         return cost;
       }
-
     }
   }
+
+  if (lane_index != current_lane)
+    return 0.5;
+
   return 0;
 }
 
@@ -452,7 +496,7 @@ double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double 
 
 void print_sensor_fusion(vector<vector<double>> &sensor_fusion, double ego_s, double ego_d, int prev_size, vector<double> map_waypoints_x, vector<double> map_waypoints_y)
 {
-  cout << "**************************" << endl;
+  //cout << "**************************" << endl;
   for(int i = 0; i < sensor_fusion.size(); i++)
   {
     double id = sensor_fusion[i][0];
@@ -497,12 +541,11 @@ void print_sensor_fusion(vector<vector<double>> &sensor_fusion, double ego_s, do
     double diff_d = ego_d - d;
 
 
-    if(lane_index == 1)
-    {
+/*
       cout << "Id: " << id << " x: " << x << " y: " << y << " vx: " << vx << " vy: " << vy
           << " s: " << s << " d: " << d << " lane: " << lane_index
           << " diff s: " << diff_s << " diff d: " << diff_d << endl;
-    }
+*/
   }
 }
 
@@ -595,7 +638,12 @@ int main() {
           	  car_s = end_path_s;
           	}
 
+            double dt = (double)prev_size*NEXT_WAYPOINT_TIME;
+
+
           	print_sensor_fusion(sensor_fusion, car_s, car_d, prev_size, map_waypoints_x, map_waypoints_y);
+          	//neighbor_detector(sensor_fusion, car_s, car_speed, NEXT_WAYPOINT_TIME, lane, 10);
+
 
 
           	/*bool too_close = is_obstacle_too_close_in_front(sensor_fusion, lane, car_s, prev_size);
@@ -612,27 +660,32 @@ int main() {
           	  ref_vel += ACCELERATION;
           	}*/
 
-          	double min_cost = 99999.0;
+          	double min_cost = 999999999.0;
             vector<double> next_x_vals;
             vector<double> next_y_vals;
             int selected_lane;
             double selected_speed;
-            double dt = (double)prev_size*NEXT_WAYPOINT_TIME;
             dt = NEXT_WAYPOINT_TIME;
+            for (int lane_change = -1; lane_change <= 1; lane_change++)
+            {
+              int new_lane = lane + lane_change;
+
             for (int acceleration_change = -2; acceleration_change <= 2; acceleration_change++)
             {
 
                double new_ref_vel = ref_vel + acceleration_change*ACCELERATION;
 
-               if (new_ref_vel > 0.01 && lane >= 0 && lane <=2)
+               if (new_ref_vel > 0.01 && new_lane >= 0 && new_lane <=2)
                {
 
                  double speed_cost_value = speed_cost(new_ref_vel,MAX_SPEED, 5, 0.7);
-                 double distance_cost_value =  distance_cost(sensor_fusion, car_s, new_ref_vel, dt, lane, 30);
+                 double distance_cost_value =  distance_cost(sensor_fusion, car_s, new_ref_vel, dt, new_lane, lane, 30);
+                 double change_lane_cost_value = change_lane_cost(sensor_fusion, car_s, car_speed, NEXT_WAYPOINT_TIME, lane, new_lane, 30.0);
+
 
                  //double distance_cost_value = distance_cost(car_s, new_ref_vel, )
 
-                 double cost = speed_cost_value + 100.0*distance_cost_value;
+                 double cost = speed_cost_value + 100.0*distance_cost_value + 10000.0*change_lane_cost_value;
                  cout << "Cost: " << cost << endl;
 
                  if (cost < min_cost)
@@ -640,15 +693,16 @@ int main() {
                    min_cost = cost;
                    //next_x_vals = aux_x;
                    //next_y_vals = aux_y;
-                   selected_lane = lane;
+                   selected_lane = new_lane;
                    selected_speed = new_ref_vel;
                  }
                }
               }
+            }
 
             lane = selected_lane;
             ref_vel = selected_speed;
-            cout << "Selected speed: " << ref_vel <<  endl;
+            //cout << "Selected speed: " << ref_vel <<  endl;
             calculate_path(lane, ref_vel, j,
                                            map_waypoints_s,map_waypoints_x,map_waypoints_y,
                                            next_x_vals, next_y_vals);
