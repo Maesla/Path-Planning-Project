@@ -1,4 +1,4 @@
-#Path Planning Model#
+# Path Planning Model #
 In this write up I will explain my path planning model and how I addressed all the problems and rubric points.
 
 ## Sumary ##
@@ -20,7 +20,7 @@ Then, using splines, we get a smooth and jerkless path. And using the previous p
 There is a function in line 285
 
 
-```
+```c++
 void calculate_path(int lane_index, double ref_vel, json j,
                     vector<double> map_waypoints_s,vector<double> map_waypoints_x,vector<double> map_waypoints_y,
                     vector<double> &waypoints_x, vector<double> &waypoints_y)
@@ -35,7 +35,7 @@ One important rubric point for the project was the jerk. In my project, this was
 The simulator retrieves a sensor fusion vector with traffic information. But this is an incomplete information for the purpose of the planner. We need to predict where the traffic will be in the future in order to drive the vehicle on the highway.
 
 This is solved by the function in line 416.
-```
+```c++
 void predict_traffic(vector<vector<double>> &sensor_fusion, double ego_s, double ego_d, int prev_size, vector<double> map_waypoints_x, vector<double> map_waypoints_y)
 ```
 
@@ -61,13 +61,13 @@ The cost is calculated by 3 function cost. Each function has a cost and a weight
 
 ## Speed ##
 The first cost function takes into account the speed. It is totally based on lesson 4, Point 11. The cost is minimal when the speed is the required speed. If the speed is higher than the legal speed, the cost is maximum. The function can be found at line 348.
-```
+```c++
 float speed_cost(double speed,double speed_limit, double buffer_v, double stop_cost)
 ```
 
 ## Safety Distance ##
 The second cost function takes into account the safety distance. With this cost function, we achieved that the vehicle detects that there is a vehicle in front of it and it should slow down in order to keep the distance. This function is also responsible for lane changing looking for a free lane. This function can be found at line 387.
-```
+```c++
 double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int lane_index, int current_lane, double max_distance)
 ```
 ## Safe lane change ##
