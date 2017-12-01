@@ -178,57 +178,11 @@ double get_lane_d_center(int lane_index)
   return half_lane_width+lane_width*lane_index;
 }
 
-bool is_in_lane(float d, int lane_index)
-{
-  float lane_width = LANE_WIDTH;
-  float half_lane_width = 0.5*lane_width;
-  return (d < (half_lane_width+lane_width*lane_index+half_lane_width) && d > (half_lane_width+lane_width*lane_index-half_lane_width));
-}
-
 int get_lane_index(double d)
 {
   return ((int)d/LANE_WIDTH);
-  //return (int)(((d - LANE_WIDTH*0.5) / LANE_WIDTH) + LANE_WIDTH*0.5);
-  /*for(int i = -3; i < 3; i++)
-  {
-    if (is_in_lane(d, i))
-      return i;
-  }
 
-  return -10;*/
 }
-
-
-bool is_in_front(double ego_vehicle_s, double check_s, double distance)
-{
-  return (check_s > ego_vehicle_s) && ((check_s-ego_vehicle_s) < distance);
-}
-
-bool is_obstacle_too_close_in_front(vector<vector<double>> sensor_fusion, int lane_index, double ego_vehicle_s, int prev_size)
-{
-  for(int i = 0; i < sensor_fusion.size(); i++)
-  {
-    float d = sensor_fusion[i][6];
-    if (is_in_lane(d, lane_index))
-    {
-      double vx = sensor_fusion[i][3];
-      double vy = sensor_fusion[i][4];
-      double check_speed = sqrt(vx*vx+vy*vy);
-      double check_car_s = sensor_fusion[i][5];
-
-      //cout << "Car s: " << check_car_s << " Speed: " << check_speed << " Prev_size: " << prev_size << endl;
-      check_car_s += ((double)prev_size*NEXT_WAYPOINT_TIME*check_speed);
-      //cout << "New s:" << check_car_s << endl;
-
-      if (is_in_front(ego_vehicle_s, check_car_s, 30))
-      {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 
 void calculate_auxiliar_path_connecting_with_previous(double car_s,double car_x, double car_y, double car_yaw, int prev_size,
              vector<double> previous_path_x, vector <double> previous_path_y,
@@ -408,41 +362,6 @@ float speed_cost(double speed,double speed_limit, double buffer_v, double stop_c
 
 }
 
-float lane_obstacle_cost(vector<vector<double>> sensor_fusion, int lane_index, double ego_vehicle_s, int prev_size)
-{
-  if (is_obstacle_too_close_in_front(sensor_fusion, lane_index, ego_vehicle_s, prev_size))
-      return 1;
-
-  return 0;
-}
-
-float lane_change_cost(int new_lane, int current_lane)
-{
-  if (new_lane == current_lane)
-    return 0;
-
-  return 1;
-}
-
-double neighbor_detector(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int current_lane, double threshold)
-{
-  double next_s = ego_s + speed*dt;
-  for(int i = 0; i < sensor_fusion.size(); i++)
-  {
-    double predicted_s = sensor_fusion[i][7];
-    int traffic_lane = sensor_fusion[i][9];
-    bool is_neighbor = current_lane != traffic_lane;
-    double distance = predicted_s - next_s;
-
-    if(is_neighbor && (fabs(distance) < threshold))
-    {
-      cout << "Neightbour in lane: " << traffic_lane << " at distance: " << distance << endl;
-    }
-  }
-
-  return 0.0;
-}
-
 double change_lane_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int current_lane, int next_lane,  double threshold)
 {
   double next_s = ego_s + speed*dt;
@@ -494,7 +413,7 @@ double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double 
 
 
 
-void print_sensor_fusion(vector<vector<double>> &sensor_fusion, double ego_s, double ego_d, int prev_size, vector<double> map_waypoints_x, vector<double> map_waypoints_y)
+void predict_traffic(vector<vector<double>> &sensor_fusion, double ego_s, double ego_d, int prev_size, vector<double> map_waypoints_x, vector<double> map_waypoints_y)
 {
   //cout << "**************************" << endl;
   for(int i = 0; i < sensor_fusion.size(); i++)
@@ -525,7 +444,6 @@ void print_sensor_fusion(vector<vector<double>> &sensor_fusion, double ego_s, do
 
     double predicted_s = s + v_s*dt;
     double predicted_d = d + v_d*dt;
-    //vector<double> next_s_d = getFrenet(next_x, next_y, yaw, map_waypoints_x, map_waypoints_y);
 
     int lane_index = get_lane_index(d);
     int predicted_lane_index(predicted_d);
@@ -641,28 +559,12 @@ int main() {
             double dt = (double)prev_size*NEXT_WAYPOINT_TIME;
 
 
-          	print_sensor_fusion(sensor_fusion, car_s, car_d, prev_size, map_waypoints_x, map_waypoints_y);
-          	//neighbor_detector(sensor_fusion, car_s, car_speed, NEXT_WAYPOINT_TIME, lane, 10);
+          	predict_traffic(sensor_fusion, car_s, car_d, prev_size, map_waypoints_x, map_waypoints_y);
 
 
-
-          	/*bool too_close = is_obstacle_too_close_in_front(sensor_fusion, lane, car_s, prev_size);
-          	if (too_close)
-          	{
-          	  if (lane > 0)
-          	  {
-          	    lane = 0;
-          	  }
-          	  ref_vel -= ACCELERATION;
-          	}
-          	else if (ref_vel < MAX_SPEED)
-          	{
-          	  ref_vel += ACCELERATION;
-          	}*/
 
           	double min_cost = 999999999.0;
-            vector<double> next_x_vals;
-            vector<double> next_y_vals;
+
             int selected_lane;
             double selected_speed;
             dt = NEXT_WAYPOINT_TIME;
@@ -682,17 +584,12 @@ int main() {
                  double distance_cost_value =  distance_cost(sensor_fusion, car_s, new_ref_vel, dt, new_lane, lane, 30);
                  double change_lane_cost_value = change_lane_cost(sensor_fusion, car_s, car_speed, NEXT_WAYPOINT_TIME, lane, new_lane, 30.0);
 
-
-                 //double distance_cost_value = distance_cost(car_s, new_ref_vel, )
-
                  double cost = speed_cost_value + 100.0*distance_cost_value + 10000.0*change_lane_cost_value;
                  cout << "Cost: " << cost << endl;
 
                  if (cost < min_cost)
                  {
                    min_cost = cost;
-                   //next_x_vals = aux_x;
-                   //next_y_vals = aux_y;
                    selected_lane = new_lane;
                    selected_speed = new_ref_vel;
                  }
@@ -703,73 +600,13 @@ int main() {
             lane = selected_lane;
             ref_vel = selected_speed;
             //cout << "Selected speed: " << ref_vel <<  endl;
+
+            vector<double> next_x_vals;
+            vector<double> next_y_vals;
             calculate_path(lane, ref_vel, j,
                                            map_waypoints_s,map_waypoints_x,map_waypoints_y,
                                            next_x_vals, next_y_vals);
 
-
-/*
-            for (int lane_change = -1; lane_change <= 1; lane_change++)
-            {
-              for (int acceleration_change = -1; acceleration_change <= 1; acceleration_change++)
-              {
-                //int new_lane = lane;// + lane_change;
-                int new_lane = lane + lane_change;
-
-                double new_ref_vel = ref_vel + acceleration_change*ACCELERATION;
-
-                if (new_ref_vel > 0.01 && new_lane >= 0 && new_lane <=2)
-                {
-                  vector<double> aux_x;
-                  vector<double> aux_y;
-                  calculate_path(new_lane, new_ref_vel, j,
-                                 map_waypoints_s,map_waypoints_x,map_waypoints_y,
-                                 aux_x, aux_y);
-
-                  double speed_cost_value = speed_cost(new_ref_vel,MAX_SPEED, 5, 0.7);
-                  double lane_cost = lane_obstacle_cost2(sensor_fusion, new_lane, car_s, prev_size);
-                  double change_lane_cost_value = lane_change_cost(new_lane, lane);
-                  double exp_cost = experimental_cost(sensor_fusion, aux_x, aux_y);
-
-                  //double cost = speed_cost_value + 10*lane_cost;// + change_lane_cost_value;
-                  double cost = 10*exp_cost + speed_cost_value;
-
-                  if (cost < min_cost)
-                  {
-                    min_cost = cost;
-                    next_x_vals = aux_x;
-                    next_y_vals = aux_y;
-                    selected_lane = new_lane;
-                    selected_speed = new_ref_vel;
-
-                    if (change_lane_cost_value > 0)
-                    {
-                      selected_speed = ref_vel - 2*ACCELERATION;
-                      cout << "HOLA" << endl;
-                    }
-                    else
-                    {
-                      selected_speed = new_ref_vel;
-
-                    }
-
-                  }
-                }
-              }
-            }
-*/
-
-
-            //cout << "Lane: " << lane << " Ref vel: " << ref_vel << endl;
-
-
-            /*
-            vector<double> next_x_vals;
-            vector<double> next_y_vals;
-          	calculate_path(lane, ref_vel, j,
-          	                    map_waypoints_s,map_waypoints_x,map_waypoints_y,
-          	                    next_x_vals, next_y_vals);
-          	                    */
 
           	json msgJson;
 
