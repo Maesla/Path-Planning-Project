@@ -71,7 +71,10 @@ The second cost function takes into account the safety distance. With this cost 
 double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int lane_index, int current_lane, double max_distance)
 ```
 ## Safe lane change ##
-This is a very important cost function and it has the highest weight. This function avoids that the vehicle change to a lane with dangerous traffic. It detects if there is a vehicle in this possible lane, either in front or behind, and has a maximum cost if this is detected. What we want to obtain is that the vehicle only changes its lane if it is a really safe movement. This cost function also makes the vehicle change to a safe lane if it detects that a vehicle behind has higher speed. In this case, if it is possible, the ego vehicle changes to a free lane and lets the other vehicle pass faster.
+This is a very important cost function and it has the highest weight. This function avoids that the vehicle change to a lane with dangerous traffic. It detects if there is a vehicle in this possible lane, either in front or behind, and has a maximum cost if this is detected. What we want to obtain is that the vehicle only changes its lane if it is a really safe movement. This cost function also makes the vehicle change to a safe lane if it detects that a vehicle behind has higher speed. In this case, if it is possible, the ego vehicle changes to a free lane and lets the other vehicle pass faster. This function can be found at line 365
+```c++
+double change_lane_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, int current_lane, int next_lane,  double threshold)
+```
 
 ## Discussion: Floating-point precision issue ##
 I am a professional Unity Developer. I have developed videogames and right now I am a Vehicle Dynamics programmer in vehicle training simulators made with Unity3D.
