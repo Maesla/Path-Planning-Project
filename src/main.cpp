@@ -363,6 +363,9 @@ float speed_cost(double speed,double speed_limit, double buffer_v, double stop_c
 
 double change_lane_cost(vector<vector<double>> sensor_fusion, double ego_s, double speed, double dt, double ego_d, int current_lane, int next_lane,  double threshold)
 {
+  if (speed < 37.5 && current_lane != next_lane) // too slow for changing
+    return 1.0;
+
   double next_s = ego_s + speed*dt;
   bool is_lane_change = current_lane != next_lane;
 
@@ -380,11 +383,11 @@ double change_lane_cost(vector<vector<double>> sensor_fusion, double ego_s, doub
     double predicted_traffic_d = sensor_fusion[i][8];
 
     //double distance_d = min(fabs(traffic_d - ego_d), fabs(predicted_traffic_d - ego_d));
-    double distance_d = fabs(traffic_d - ego_d);
+    double distance_d = fabs(traffic_d - next_s);
 
-    bool is_neighbor = next_lane == traffic_lane;// || distance_d > LANE_WIDTH*0.75;
+    bool is_neighbor = next_lane == traffic_lane && next_lane != current_lane;// || distance_d > LANE_WIDTH*0.75;
 
-    double predicted_distance = fabs(predicted_s - next_s);
+    double predicted_distance = fabs(predicted_s - ego_s);
     double current_distance = fabs(s - ego_s);
     //double distance = min(predicted_distance, current_distance);
     double distance = predicted_distance;
@@ -407,8 +410,6 @@ double change_lane_cost(vector<vector<double>> sensor_fusion, double ego_s, doub
     cout << "Neightbour in lane: " << next_lane << " at distance: " << min_distance << endl;
     return 1.0 - min_distance/threshold;
   }
-  else if (current_lane != next_lane)
-    return 0.1;
 
   return 0.0;
 }
@@ -435,7 +436,7 @@ double distance_cost(vector<vector<double>> sensor_fusion, double ego_s, double 
   }
 
   if (lane_index != current_lane)
-    return 0.5;
+    return 0.01;
 
   return 0;
 }
@@ -611,9 +612,9 @@ int main() {
 
                    double speed_cost_value = speed_cost(new_ref_vel,MAX_SPEED, 5, 0.7);
                    double distance_cost_value =  distance_cost(sensor_fusion, car_s, new_ref_vel, dt, new_lane, lane, 30);
-                   double change_lane_cost_value = change_lane_cost(sensor_fusion, car_s, car_speed, NEXT_WAYPOINT_TIME, car_d, lane, new_lane, 30.0);
+                   double change_lane_cost_value = change_lane_cost(sensor_fusion, car_s, car_speed, NEXT_WAYPOINT_TIME, car_d, lane, new_lane, 40.0);
 
-                   double cost = speed_cost_value + 100.0*distance_cost_value + 10000.0*change_lane_cost_value;
+                   double cost = speed_cost_value + 100.0*distance_cost_value + 100000.0*change_lane_cost_value;
                    cout << "Cost: " << cost << endl;
 
                    if (cost < min_cost)
